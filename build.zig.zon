@@ -1,0 +1,21 @@
+.{
+    .name = .todo_app,
+    .version = "0.0.0",
+    .fingerprint = 0x1d8067f6924f91f9,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .sqlite3 = .{
+            .url = "C:\\R\\Langs\\C_Libs\\sqlite-amalgamation.zip",
+            .hash = "N-V-__8AAGVtrgCcOcmjrOJnagmnRyMrcKaOo09KbU-vu8w8",
+        },
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis.git#c060d314930c5552b99a89278a6a695baf0352da",
+            .hash = "vaxis-0.6.0-BWNV_LC4CwBka_bJk8SOXqzCM-nyQH00jzdL0kUhGwRE",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
