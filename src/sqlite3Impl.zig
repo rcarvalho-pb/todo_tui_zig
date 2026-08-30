@@ -9,6 +9,7 @@ const print = std.debug.print;
 const sqlite = @import("sqlite3");
 
 const Database = @import("database.zig");
+const TaskQueryOptions = Database.TaskQueryOptions;
 const GroupCount = Database.GroupCount;
 
 const Task = @import("task.zig");
@@ -19,10 +20,15 @@ allocator: Allocator,
 db: ?*sqlite.sqlite3,
 interface: Database,
 
+const Page = struct {
+    limit: usize,
+    offset: usize,
+};
+
 pub fn init(allocator: Allocator, path: [*:0]const u8) !*Self {
     var db: ?*sqlite.sqlite3 = null;
 
-    const rc = sqlite.sqlite3_open(path, &db);
+    var rc = sqlite.sqlite3_open(path, &db);
     if (rc != sqlite.SQLITE_OK) {
         print("cannot open database: {s}\n", .{sqlite.sqlite3_errmsg(db)});
         _ = sqlite.sqlite3_close(db);
@@ -39,12 +45,20 @@ pub fn init(allocator: Allocator, path: [*:0]const u8) !*Self {
 
     self.interface = self.createInterface();
 
-    print("INIT self = {*}\n", .{&self});
-    print("INIT db   = {?}\n", .{self.db});
+    var stmt: ?*sqlite.sqlite3_stmt = null;
+    const sql = @embedFile(sql_path ++ "/create_table.sql");
 
-    if (db) |database| {
-        print("INIT sqlite db      = {*}\n", .{database});
+    rc = sqlite.sqlite3_prepare_v2(db, sql, @intCast(sql.len), &stmt, null);
+    if (checkError(db, rc, "PREPARE: CREATE TABLE")) {
+        return error.SqlitePrepareFailed;
     }
+    defer _ = sqlite.sqlite3_finalize(stmt);
+
+    rc = sqlite.sqlite3_step(stmt);
+    if (checkError(db, rc, "STEP: CREATE TABLE")) {
+        return error.SqliteStepFailed;
+    }
+
     return self;
 }
 
@@ -71,6 +85,8 @@ fn createInterface(self: *Self) Database {
             .countTasksByRequester = countTasksByRequester,
             .getAverageWaitTimeMs = getAverageWaitTimeMs,
             .getAverageLeadTimeMs = getAverageLeadTimeMs,
+            .countTotalTasks = countTotalTasks,
+            .listTasksPaginated = listTasksPaginated,
         },
     };
 
@@ -110,9 +126,6 @@ fn createTable(ctx: *anyopaque) !void {
         &err_msg,
     );
 
-    print("sqlite3_exec rc = {}\n", .{rc});
-    print("SQLITE_OK = {}\n", .{sqlite.SQLITE_OK});
-
     if (rc != sqlite.SQLITE_OK) {
         if (err_msg != null) {
             print("SQLite error: {s}\n", .{err_msg});
@@ -130,19 +143,7 @@ fn createTable(ctx: *anyopaque) !void {
 fn createTask(ctx: *anyopaque, task: Task) !i64 {
     const self: *Self = @ptrCast(@alignCast(ctx));
 
-    print("createTask self     = {*}\n", .{self});
-    print("createTask &db      = {*}\n", .{&self.db});
-
-    if (self.db) |db| {
-        print("createTask db      = {*}\n", .{db});
-    }
-
     const sql = @embedFile(sql_path ++ "/create_task.sql");
-
-    print("\n--- createTask ---\n", .{});
-    print("db ptr: {?}\n", .{self.db});
-    print("SQL: {s}\n", .{sql});
-    print("SQL len: {}\n", .{sql.len});
 
     var stmt: ?*sqlite.sqlite3_stmt = null;
 
@@ -153,9 +154,6 @@ fn createTask(ctx: *anyopaque, task: Task) !i64 {
         &stmt,
         null,
     );
-
-    print("prepare rc = {}\n", .{rc});
-    print("stmt = {?}\n", .{stmt});
 
     if (rc != sqlite.SQLITE_OK) {
         print("SQLite error: {s}\n", .{
@@ -533,4 +531,90 @@ fn getAverageLeadTimeMs(ctx: *anyopaque) !?f64 {
         return sqlite.sqlite3_column_double(stmt, 0);
     }
     return error.SqliteStepFailed;
+}
+
+pub fn listTasksPaginated(ctx: *anyopaque, allocator: Allocator, opts: TaskQueryOptions) ![]Task {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+
+    // Buffer para armazenar a consulta SQL com as colunas interpoladas de forma segura
+    var sql_buf: [256]u8 = undefined;
+    const sql = try std.fmt.bufPrintZ(
+        &sql_buf,
+        \\SELECT id, title, owner, requester, status, created_at, started_at, finished_at
+        \\FROM tasks
+        \\ORDER BY {s} {s}
+        \\LIMIT ? OFFSET ?;
+    ,
+        .{ opts.sort_by.toSqlColumn(), opts.sort_order.toSql() },
+    );
+
+    var stmt: ?*sqlite.sqlite3_stmt = null;
+    if (sqlite.sqlite3_prepare_v2(self.db, sql.ptr, -1, &stmt, null) != sqlite.SQLITE_OK) {
+        return error.SqlitePrepareFail;
+    }
+    defer _ = sqlite.sqlite3_finalize(stmt);
+
+    // Bind seguro apenas para os valores numéricos de paginação
+    _ = sqlite.sqlite3_bind_int64(stmt, 1, @intCast(opts.limit));
+    _ = sqlite.sqlite3_bind_int64(stmt, 2, @intCast(opts.offset));
+
+    var list = std.ArrayList(Task).init(allocator);
+    errdefer {
+        for (list.items) |t| t.deinit(allocator);
+        list.deinit();
+    }
+
+    while (sqlite.sqlite3_step(stmt) == sqlite.SQLITE_ROW) {
+       const name_ptr = sqlite.sqlite3_column_text(stmt, 0);
+       const name_len = sqlite.sqlite3_column_bytes(stmt, 0);
+       const name = try allocator.dupe(u8, name_ptr[0..@intCast(name_len)]);
+       const count = sqlite.sqlite3_column_int64(stmt, 1);
+       try list.append(allocator, .{ .name = name, .count = @intCast(count) });
+    }
+
+    return list.toOwnedSlice();
+}
+
+// pub fn listTasksPaginated(ctx: *anyopaque, allocator: Allocator, page: Page) ![]Task {
+//     const self: *Self = @ptrCast(@alignCast(ctx));
+//
+//     const sql = @embedFile(sql_path ++ "/list_tasks_paginated.sql");
+//
+//     var stmt: ?*sqlite.sqlite3_stmt = null;
+//     const rc = sqlite.sqlite3_prepare_v2(self.db, sql, @intCast(sql.len), &stmt, null);
+//     if (checkError(self.db, rc, "STMT Prepare")) {
+//         return error.SqlitePrepareFailed;
+//     }
+//     defer _ = sqlite.sqlite3_finalize(stmt);
+//
+//     _ = sqlite.sqlite3_bind_int64(stmt, 1, @intCast(page.limit));
+//     _ = sqlite.sqlite3_bind_int64(stmt, 2, @intCast(page.offset));
+//
+//     var list: std.ArrayList(Task) = .initCapacity(self.allocator, 0);
+//     errdefer list.deinit(self.allocator);
+//
+//     while(sqlite.sqlite3_step(stmt) == sqlite.SQLITE_ROW) {
+//        const name_ptr = sqlite.sqlite3_column_text(stmt, 0);
+//        const name_len = sqlite.sqlite3_column_bytes(stmt, 0);
+//        const name = try allocator.dupe(u8, name_ptr[0..@intCast(name_len)]);
+//        const count = sqlite.sqlite3_column_int64(stmt, 1);
+//
+//        try list.append(allocator, .{ .name = name, .count = @intCast(count) });
+//     }
+//
+//     return list.toOwnedSlice(self.allocator);
+// }
+
+pub fn countTotalTasks(ctx: *anyopaque) !usize {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    const sql = "SELECT COUNT(*) FROM tasks;";
+
+    var stmt: ?*sqlite.sqlite3_stmt = null;
+    if (sqlite.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != sqlite.SQLITE_OK) return error.SqlitePrepareFail;
+    defer _ = sqlite.sqlite3_finalize(stmt);
+
+    if (sqlite.sqlite3_step(stmt) == sqlite.SQLITE_ROW) {
+        return @intCast(sqlite.sqlite3_column_int64(stmt, 0));
+    }
+    return 0;
 }

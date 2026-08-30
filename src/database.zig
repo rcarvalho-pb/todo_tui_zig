@@ -9,6 +9,42 @@ const Self = @This();
 ptr: *anyopaque,
 vtable: *const VTable,
 
+pub const SortColumn = enum {
+    id, title, owner, requester, status, createdAt, startedAt, finishedAt,
+
+    pub fn toSqlColumn(self: @This()) []const u8 {
+        return switch(self) {
+            .id => "id",
+            .title => "task_name",
+            .owner => "owner",
+            .requester => "requester",
+            .status => "status",
+            .createdAt => "created_at",
+            .startedAt => "started_at",
+            .finishedAt => "finished_at",
+        };
+    }
+};
+
+pub const SortOrder = enum {
+    asc,
+    desc,
+
+    pub fn toSql(self: @This()) []const u8 {
+        return switch(self) {
+            .asc => "ASC",
+            .desc => "DESC",
+        };
+    }
+};
+
+pub const TaskQueryOptions = struct {
+    limit: usize = 10,
+    offset: usize = 0,
+    sort_by: SortColumn = .id,
+    sort_order: SortOrder = .asc,
+};
+
 pub const GroupCount = struct {
     name: []const u8,
     count: usize,
@@ -33,6 +69,8 @@ const VTable = struct {
     countTasksByRequester: *const fn (allocator: Allocator, ctx: *anyopaque) anyerror![]GroupCount,
     getAverageWaitTimeMs: *const fn(ctx: *anyopaque) anyerror!?f64,
     getAverageLeadTimeMs: *const fn(ctx: *anyopaque) anyerror!?f64,
+    countTotalTasks: *const fn(ctx: *anyopaque) anyerror!usize,
+    listTasksPaginated: *const fn(ctx: *anyopaque, allocator: Allocator, options: TaskQueryOptions) anyerror![]Task,
 };
 
 pub fn createTable(self: Self) !void {
@@ -88,4 +126,12 @@ pub fn getAverageWaitTimeMs (self: Self) anyerror!?f64 {
 }
 pub fn getAverageLeadTimeMs(self: Self) anyerror!?f64 {
     return self.vtable.getAverageLeadTimeMs(self.ptr);
+}
+
+pub fn countTotalTasks(self: Self) !usize {
+    return self.vtable.countTotalTasks(self.ptr);
+}
+
+pub fn listTasksPaginated(self: Self, allocator: Allocator, options: TaskQueryOptions) ![]Task {
+    return self.vtable.listTasksPaginated(self.ptr, allocator, options);
 }
