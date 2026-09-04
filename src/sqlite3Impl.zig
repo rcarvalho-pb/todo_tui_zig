@@ -165,22 +165,40 @@ fn createTask(ctx: *anyopaque, task: Task) !i64 {
 
     defer _ = sqlite.sqlite3_finalize(stmt);
 
-    if (task.task_name) |name| {
-        _ = sqlite.sqlite3_bind_text(stmt, 1, name.ptr, @intCast(name.len), sqlite.SQLITE_STATIC);
+    if (task.title) |title| {
+        _ = sqlite.sqlite3_bind_text(stmt, 1, title.ptr, @intCast(title.len), sqlite.SQLITE_STATIC);
     } else {
         return error.TaskNameRequired;
     }
 
-    if (task.owner) |owner| {
-        _ = sqlite.sqlite3_bind_text(stmt, 2, owner.ptr, @intCast(owner.len), sqlite.SQLITE_STATIC);
+    if (task.description) |desc| {
+        _ = sqlite.sqlite3_bind_text(stmt, 2, desc.ptr, @intCast(desc.len), sqlite.SQLITE_STATIC);
     } else {
         _ = sqlite.sqlite3_bind_null(stmt, 2);
     }
 
-    if (task.requester) |req| {
-        _ = sqlite.sqlite3_bind_text(stmt, 3, req.ptr, @intCast(req.len), sqlite.SQLITE_STATIC);
+    if (task.owner) |owner| {
+        _ = sqlite.sqlite3_bind_text(stmt, 3, owner.ptr, @intCast(owner.len), sqlite.SQLITE_STATIC);
     } else {
         _ = sqlite.sqlite3_bind_null(stmt, 3);
+    }
+
+    if (task.requester) |req| {
+        _ = sqlite.sqlite3_bind_text(stmt, 4, req.ptr, @intCast(req.len), sqlite.SQLITE_STATIC);
+    } else {
+        _ = sqlite.sqlite3_bind_null(stmt, 4);
+    }
+
+    if (task.created_at) |req| {
+        _ = sqlite.sqlite3_bind_int64(stmt, 5, @intCast(req));
+    } else {
+        return error.InvalidTaskNullCreationTimestamp;
+    }
+
+    if (task.updated_at) |req| {
+        _ = sqlite.sqlite3_bind_int64(stmt, 6, @intCast(req));
+    } else {
+        return error.InvalidTaskNullUpdateTimestamp;
     }
 
     const step_rc = sqlite.sqlite3_step(stmt);
@@ -206,16 +224,18 @@ fn updateTask(ctx: *anyopaque, task: Task) !void {
     // Correção: O defer precisa ficar DEPOIS do prepare para evitar ponteiro nulo
     defer _ = sqlite.sqlite3_finalize(stmt);
 
-    _ = if (task.id) |id| sqlite.sqlite3_bind_int64(stmt, 7, @intCast(id)) else return error.IdCannotBeNull;
+    _ = if (task.id) |id| sqlite.sqlite3_bind_int64(stmt, 9, @intCast(id)) else return error.IdCannotBeNull;
 
-    _ = if (task.task_name) |n| sqlite.sqlite3_bind_text(stmt, 1, n.ptr, @intCast(n.len), sqlite.SQLITE_STATIC) else sqlite.sqlite3_bind_null(stmt, 1);
-    _ = if (task.owner) |o| sqlite.sqlite3_bind_text(stmt, 2, o.ptr, @intCast(o.len), sqlite.SQLITE_STATIC) else sqlite.sqlite3_bind_null(stmt, 2);
-    _ = if (task.requester) |r| sqlite.sqlite3_bind_text(stmt, 3, r.ptr, @intCast(r.len), sqlite.SQLITE_STATIC) else sqlite.sqlite3_bind_null(stmt, 3);
+    _ = if (task.title) |n| sqlite.sqlite3_bind_text(stmt, 1, n.ptr, @intCast(n.len), sqlite.SQLITE_STATIC) else sqlite.sqlite3_bind_null(stmt, 1);
+    _ = if (task.description) |d| sqlite.sqlite3_bind_text(stmt, 2, d.ptr, @intCast(d.len), sqlite.SQLITE_STATIC) else sqlite.sqlite3_bind_null(stmt, 2);
+    _ = if (task.owner) |o| sqlite.sqlite3_bind_text(stmt, 3, o.ptr, @intCast(o.len), sqlite.SQLITE_STATIC) else sqlite.sqlite3_bind_null(stmt, 3);
+    _ = if (task.requester) |r| sqlite.sqlite3_bind_text(stmt, 4, r.ptr, @intCast(r.len), sqlite.SQLITE_STATIC) else sqlite.sqlite3_bind_null(stmt, 4);
 
     // Correção: Ajustada a ordem dos parâmetros (stmt, índice, valor) para bind_int64 e bind_int
-    _ = if (task.started_at) |s| sqlite.sqlite3_bind_int64(stmt, 4, s) else sqlite.sqlite3_bind_null(stmt, 4);
-    _ = if (task.finished_at) |f| sqlite.sqlite3_bind_int64(stmt, 5, f) else sqlite.sqlite3_bind_null(stmt, 5);
-    _ = if (task.status) |s| sqlite.sqlite3_bind_int(stmt, 6, @intFromEnum(s)) else sqlite.sqlite3_bind_null(stmt, 6);
+    _ = if (task.updated_at) |s| sqlite.sqlite3_bind_int64(stmt, 5, s) else sqlite.sqlite3_bind_null(stmt, 5);
+    _ = if (task.finished_at) |f| sqlite.sqlite3_bind_int64(stmt, 6, f) else sqlite.sqlite3_bind_null(stmt, 6);
+    _ = if (task.canceled_at) |s| sqlite.sqlite3_bind_int64(stmt, 7, s) else sqlite.sqlite3_bind_null(stmt, 7);
+    _ = if (task.status) |s| sqlite.sqlite3_bind_int(stmt, 8, @intFromEnum(s)) else sqlite.sqlite3_bind_null(stmt, 8);
 
     if (sqlite.sqlite3_step(stmt) != sqlite.SQLITE_DONE) {
         return error.SqliteStepFailed;
@@ -229,7 +249,7 @@ fn findTasks(ctx: *anyopaque, flag: u3) ![]Task {
     defer _ = sqlite.sqlite3_finalize(stmt);
 
     switch (flag) {
-        0, 1, 2 => {
+        0, 1, 2, 3 => {
             const sql = @embedFile(sql_path ++ "/find_task_by_flag.sql");
 
             if (sqlite.sqlite3_prepare_v2(self.db, sql, @intCast(sql.len), &stmt, null) != sqlite.SQLITE_OK) {
@@ -240,11 +260,12 @@ fn findTasks(ctx: *anyopaque, flag: u3) ![]Task {
                 0 => @intFromEnum(Task.Status.TODO),
                 1 => @intFromEnum(Task.Status.DOING),
                 2 => @intFromEnum(Task.Status.DONE),
+                3 => @intFromEnum(Task.Status.CANCELED),
                 else => return error.InvalidFlag,
             };
             _ = sqlite.sqlite3_bind_int(stmt, 1, flag_value);
         },
-        3 => {
+        4 => {
             const sql = @embedFile(sql_path ++ "/find_task_not_done.sql");
             if (sqlite.sqlite3_prepare_v2(self.db, sql, @intCast(sql.len), &stmt, null) != sqlite.SQLITE_OK) {
                 return error.FailPrepareStatment;
@@ -252,8 +273,9 @@ fn findTasks(ctx: *anyopaque, flag: u3) ![]Task {
 
             // Correção: Ajustada a ordem dos parâmetros no bind_int (stmt, índice, valor)
             _ = sqlite.sqlite3_bind_int(stmt, 1, @intFromEnum(Task.Status.DONE));
+            _ = sqlite.sqlite3_bind_int(stmt, 2, @intFromEnum(Task.Status.CANCELED));
         },
-        4 => {
+        5 => {
             const sql = @embedFile(sql_path ++ "/find_all_tasks.sql");
 
             if (sqlite.sqlite3_prepare_v2(self.db, sql, @intCast(sql.len), &stmt, null) != sqlite.SQLITE_OK) {
@@ -269,43 +291,51 @@ fn findTasks(ctx: *anyopaque, flag: u3) ![]Task {
         // Correção: Leitura de colunas do SQLite é baseada em índice ZERO (0 a 8 em vez de 1 a 9)
         const id = sqlite.sqlite3_column_int64(stmt, 0);
 
-        const task_name_ptr = sqlite.sqlite3_column_text(stmt, 1);
-        const task_name_len = sqlite.sqlite3_column_bytes(stmt, 1);
-        const task_name: ?[]const u8 = try self.allocator.dupe(u8, task_name_ptr[0..@intCast(task_name_len)]);
+        const title_ptr = sqlite.sqlite3_column_text(stmt, 1);
+        const title_len = sqlite.sqlite3_column_bytes(stmt, 1);
+        const title: ?[]const u8 = try self.allocator.dupe(u8, title_ptr[0..@intCast(title_len)]);
+
+        var description: ?[]const u8 = null;
+        if (sqlite.sqlite3_column_type(stmt, 2) != sqlite.SQLITE_NULL) {
+            const description_ptr = sqlite.sqlite3_column_text(stmt, 2);
+            const description_len = sqlite.sqlite3_column_bytes(stmt, 2);
+            description = try self.allocator.dupe(u8, description_ptr[0..@intCast(description_len)]);
+        }
 
         var owner: ?[]const u8 = null;
-        if (sqlite.sqlite3_column_type(stmt, 2) != sqlite.SQLITE_NULL) {
-            const owner_ptr = sqlite.sqlite3_column_text(stmt, 2);
-            const owner_len = sqlite.sqlite3_column_bytes(stmt, 2);
+        if (sqlite.sqlite3_column_type(stmt, 3) != sqlite.SQLITE_NULL) {
+            const owner_ptr = sqlite.sqlite3_column_text(stmt, 3);
+            const owner_len = sqlite.sqlite3_column_bytes(stmt, 3);
             owner = try self.allocator.dupe(u8, owner_ptr[0..@intCast(owner_len)]);
         }
 
         var requester: ?[]const u8 = null;
-        if (sqlite.sqlite3_column_type(stmt, 3) != sqlite.SQLITE_NULL) {
-            const requester_ptr = sqlite.sqlite3_column_text(stmt, 3);
-            const requester_len = sqlite.sqlite3_column_bytes(stmt, 3);
+        if (sqlite.sqlite3_column_type(stmt, 4) != sqlite.SQLITE_NULL) {
+            const requester_ptr = sqlite.sqlite3_column_text(stmt, 4);
+            const requester_len = sqlite.sqlite3_column_bytes(stmt, 4);
             requester = try self.allocator.dupe(u8, requester_ptr[0..@intCast(requester_len)]);
         }
 
-        const created_at = sqlite.sqlite3_column_int64(stmt, 4);
+        const created_at = sqlite.sqlite3_column_int64(stmt, 5);
 
-        const updated_at = sqlite.sqlite3_column_int64(stmt, 5);
+        const updated_at = sqlite.sqlite3_column_int64(stmt, 6);
 
         var started_at: ?i64 = null;
-        if (sqlite.sqlite3_column_type(stmt, 6) != sqlite.SQLITE_NULL) {
-            started_at = sqlite.sqlite3_column_int64(stmt, 6);
+        if (sqlite.sqlite3_column_type(stmt, 7) != sqlite.SQLITE_NULL) {
+            started_at = sqlite.sqlite3_column_int64(stmt, 7);
         }
 
         var finished_at: ?i64 = null;
-        if (sqlite.sqlite3_column_type(stmt, 7) != sqlite.SQLITE_NULL) {
-            finished_at = sqlite.sqlite3_column_int64(stmt, 7);
+        if (sqlite.sqlite3_column_type(stmt, 8) != sqlite.SQLITE_NULL) {
+            finished_at = sqlite.sqlite3_column_int64(stmt, 8);
         }
 
-        const status: Task.Status = @enumFromInt(sqlite.sqlite3_column_int(stmt, 8));
+        const status: Task.Status = @enumFromInt(sqlite.sqlite3_column_int(stmt, 9));
 
         try tasks.append(self.allocator, .{
             .id = id,
-            .task_name = task_name,
+            .title = title,
+            .description = description,
             .owner = owner,
             .requester = requester,
             .created_at = created_at,
@@ -533,7 +563,7 @@ fn getAverageLeadTimeMs(ctx: *anyopaque) !?f64 {
     return error.SqliteStepFailed;
 }
 
-pub fn listTasksPaginated(ctx: *anyopaque, allocator: Allocator, opts: TaskQueryOptions) ![]Task {
+pub fn listTasksPaginated(ctx: *anyopaque, allocator: Allocator, opts: TaskQueryOptions) ![]GroupCount {
     const self: *Self = @ptrCast(@alignCast(ctx));
 
     // Buffer para armazenar a consulta SQL com as colunas interpoladas de forma segura
@@ -558,10 +588,10 @@ pub fn listTasksPaginated(ctx: *anyopaque, allocator: Allocator, opts: TaskQuery
     _ = sqlite.sqlite3_bind_int64(stmt, 1, @intCast(opts.limit));
     _ = sqlite.sqlite3_bind_int64(stmt, 2, @intCast(opts.offset));
 
-    var list = std.ArrayList(Task).init(allocator);
+    var list = try std.ArrayList(GroupCount).initCapacity(allocator, 0);
     errdefer {
-        for (list.items) |t| t.deinit(allocator);
-        list.deinit();
+        for (list.items) |*t| t.deinit(allocator);
+        list.deinit(allocator);
     }
 
     while (sqlite.sqlite3_step(stmt) == sqlite.SQLITE_ROW) {
@@ -572,7 +602,7 @@ pub fn listTasksPaginated(ctx: *anyopaque, allocator: Allocator, opts: TaskQuery
        try list.append(allocator, .{ .name = name, .count = @intCast(count) });
     }
 
-    return list.toOwnedSlice();
+    return list.toOwnedSlice(allocator);
 }
 
 // pub fn listTasksPaginated(ctx: *anyopaque, allocator: Allocator, page: Page) ![]Task {

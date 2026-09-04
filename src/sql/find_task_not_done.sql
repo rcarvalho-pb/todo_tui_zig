@@ -1,1 +1,1 @@
-SELECT * FROM tasks WHERE NOT status = ?;
+SELECT * FROM tasks WHERE status != ? and status != ?;

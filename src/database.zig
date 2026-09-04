@@ -10,10 +10,17 @@ ptr: *anyopaque,
 vtable: *const VTable,
 
 pub const SortColumn = enum {
-    id, title, owner, requester, status, createdAt, startedAt, finishedAt,
+    id,
+    title,
+    owner,
+    requester,
+    status,
+    createdAt,
+    startedAt,
+    finishedAt,
 
     pub fn toSqlColumn(self: @This()) []const u8 {
-        return switch(self) {
+        return switch (self) {
             .id => "id",
             .title => "task_name",
             .owner => "owner",
@@ -31,7 +38,7 @@ pub const SortOrder = enum {
     desc,
 
     pub fn toSql(self: @This()) []const u8 {
-        return switch(self) {
+        return switch (self) {
             .asc => "ASC",
             .desc => "DESC",
         };
@@ -67,10 +74,10 @@ const VTable = struct {
     getMinCompletionTimeMs: *const fn (ctx: *anyopaque) anyerror!?i64,
     countTasksByOwner: *const fn (allocator: Allocator, ctx: *anyopaque) anyerror![]GroupCount,
     countTasksByRequester: *const fn (allocator: Allocator, ctx: *anyopaque) anyerror![]GroupCount,
-    getAverageWaitTimeMs: *const fn(ctx: *anyopaque) anyerror!?f64,
-    getAverageLeadTimeMs: *const fn(ctx: *anyopaque) anyerror!?f64,
-    countTotalTasks: *const fn(ctx: *anyopaque) anyerror!usize,
-    listTasksPaginated: *const fn(ctx: *anyopaque, allocator: Allocator, options: TaskQueryOptions) anyerror![]Task,
+    getAverageWaitTimeMs: *const fn (ctx: *anyopaque) anyerror!?f64,
+    getAverageLeadTimeMs: *const fn (ctx: *anyopaque) anyerror!?f64,
+    countTotalTasks: *const fn (ctx: *anyopaque) anyerror!usize,
+    listTasksPaginated: *const fn (ctx: *anyopaque, allocator: Allocator, options: TaskQueryOptions) anyerror![]GroupCount,
 };
 
 pub fn createTable(self: Self) !void {
@@ -121,7 +128,7 @@ pub fn countTasksByRequester(self: Self, allocator: Allocator) ![]GroupCount {
     return self.vtable.countTasksByRequester(allocator, self.ptr);
 }
 
-pub fn getAverageWaitTimeMs (self: Self) anyerror!?f64 {
+pub fn getAverageWaitTimeMs(self: Self) anyerror!?f64 {
     return self.vtable.getAverageWaitTimeMs(self.ptr);
 }
 pub fn getAverageLeadTimeMs(self: Self) anyerror!?f64 {
@@ -132,6 +139,6 @@ pub fn countTotalTasks(self: Self) !usize {
     return self.vtable.countTotalTasks(self.ptr);
 }
 
-pub fn listTasksPaginated(self: Self, allocator: Allocator, options: TaskQueryOptions) ![]Task {
+pub fn listTasksPaginated(self: Self, allocator: Allocator, options: TaskQueryOptions) ![]GroupCount {
     return self.vtable.listTasksPaginated(self.ptr, allocator, options);
 }

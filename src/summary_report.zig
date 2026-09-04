@@ -20,7 +20,8 @@ pub fn printSummaryReport(allocator: Allocator, db: *Database) !void {
     print("[ TEMPOS MEDIOS DE FLUXO ]\n", .{});
 
     if (try db.getAverageWaitTimeMs()) |wait_ms| {
-        const str = try formatDurationMs(allocator, @intFromFloat(wait_ms));
+        var buf: [64]u8 = undefined;
+        const str = try formatDurationMs(&buf, @intFromFloat(wait_ms));
         defer allocator.free(str);
         print("  - Tempo Medio de Espera (Wait Time): {s}\n", .{str});
     } else {
@@ -28,7 +29,8 @@ pub fn printSummaryReport(allocator: Allocator, db: *Database) !void {
     }
 
     if (try db.getAverageCompletionTimeMs()) |cycle_ms| {
-        const str = try formatDurationMs(allocator, @intFromFloat(cycle_ms));
+        var buf: [64]u8 = undefined;
+        const str = try formatDurationMs(&buf, @intFromFloat(cycle_ms));
         defer allocator.free(str);
         print("  - Tempo Medio de Execução (Cycle Time): {s}\n", .{str});
     } else {
@@ -36,7 +38,8 @@ pub fn printSummaryReport(allocator: Allocator, db: *Database) !void {
     }
 
     if (try db.getAverageLeadTimeMs()) |lead_ms| {
-        const str = try formatDurationMs(allocator, @intFromFloat(lead_ms));
+        var buf: [64]u8 = undefined;
+        const str = try formatDurationMs(&buf, @intFromFloat(lead_ms));
         defer allocator.free(str);
         print("  - Tempo Medio Total (Lead Time):     {s}\n", .{str});
     } else {
@@ -45,13 +48,15 @@ pub fn printSummaryReport(allocator: Allocator, db: *Database) !void {
 
     print("\n[ EXTREMOS DE EXECUCAO ]\n", .{});
     if (try db.getMinCompletionTimeMs()) |min_ms| {
-        const str = try formatDurationMs(allocator, min_ms);
+        var buf: [64]u8 = undefined;
+        const str = try formatDurationMs(&buf, min_ms);
         defer allocator.free(str);
         print("  - Mais Rapida: {s}\n", .{str});
     }
 
     if (try db.getMaxCompletionTimeMs()) |max_ms| {
-        const str = try formatDurationMs(allocator, max_ms);
+        var buf: [64]u8 = undefined;
+        const str = try formatDurationMs(&buf, max_ms);
         defer allocator.free(str);
         print("  - Mais Lenta:  {s}\n", .{str});
     }

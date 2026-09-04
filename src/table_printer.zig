@@ -5,74 +5,52 @@ const print = std.debug.print;
 const Task = @import("task.zig");
 const Database = @import("database.zig");
 
-pub fn printTaskTable(tasks: []Task, current_page: usize, total_items: usize, page_size: usize) void {
-    const total_pages = if (total_items == 0) 1 else (total_items + page_size - 1) / page_size;
+fn printRepeated(char: u8, count: usize) void {
+    for (0..count) |_| {
+        print("{c}", .{char});
+    }
+}
 
+pub fn printTaskTable(tasks: []const Task) void {
     const id_hdr = "ID";
     const title_hdr = "TITULO";
+    const description_hdr = "DESCRICAO";
     const owner_hdr = "OWNER";
     const requester_hdr = "REQUESTER";
     const status_hdr = "STATUS";
 
     var w_id = id_hdr.len;
-    var w_title_hdr = title_hdr.len;
-    var w_owner_hdr = owner_hdr.len;
-    var w_requester_hdr = requester_hdr.len;
-    var w_status_hdr = status_hdr.len;
+    var w_title = title_hdr.len;
+    var w_desc = description_hdr.len;
+    var w_owner = owner_hdr.len;
+    var w_req = requester_hdr.len;
+    var w_status = status_hdr.len;
 
+    // 1. Calcula as larguras máximas
     for (tasks) |t| {
         if (t.id) |id| w_id = @max(w_id, std.fmt.count("{d}", .{id}));
-        if (t.task_name) |name| w_title_hdr = @max(w_title_hdr, name.len);
-        if (t.owner) |o| w_owner_hdr = @max(w_owner_hdr, o.len);
-        if (t.requester) |r| w_requester_hdr = @max(w_requester_hdr, r.len);
-        if (t.status) |s| w_status_hdr = @max(w_status_hdr, s.len);
+        if (t.title) |title| w_title = @max(w_title, title.len);
+        if (t.description) |desc| w_desc = @max(w_desc, desc.len);
+        if (t.owner) |o| w_owner = @max(w_owner, o.len);
+        if (t.requester) |r| w_req = @max(w_req, r.len);
+        if (t.status) |s| w_status = @max(w_status, @tagName(s).len);
     }
 
-    print("\n+", .{});
-    printRepeated('-', w_id + 2); print("+", .{});
-    printRepeated('-', w_title_hdr + 2); print("+", .{});
-    printRepeated('-', w_owner_hdr + 2); print("+", .{});
-    printRepeated('-', w_requester_hdr + 2); print("+", .{});
-    printRepeated('-', w_status_hdr + 2); print("+\n", .{});
-
-    print("  Página {d} de {d} | Total de registros: {d}\n\n", .{ current_page, total_pages, total_items });
-}
-
-fn printRepeated(char: u8, count: usize) void {
-    var i: usize = 0;
-    while (i < count) : (i += 1) print("{c}", .{char});
-}
-
-pub fn interactivePagination(io: std.Io, allocator: Allocator, db: *Database) !void {
-    const page_size: usize = 5;
-    var current_page: usize = 1;
-    const total_items: usize = db.countTotalTasks();
-
-    var stdin_buf: [256]u8 = undefined;
-    var stdin = std.Io.File.stdin().reader(io, &stdin_buf);
-    const reader = &stdin.interface;
-
-    while(true) {
-        const offset = (current_page - 1) * page_size;
-        const tasks = try db.listTasksPaginated(allocator, .{ .limit = page_size, .offset = offset });
-        defer {
-            for (tasks) |t| t.deinit(allocator);
-            allocator.free(tasks);
+    // Função interna para desenhar a linha divisória
+    const printSeparator = struct {
+        fn draw(w1: usize, w2: usize, w3: usize, w4: usize, w5: usize, w6: usize) void {
+            print("+", .{});
+            printRepeated('-', w1 + 2); print("+", .{});
+            printRepeated('-', w2 + 2); print("+", .{});
+            printRepeated('-', w3 + 2); print("+", .{});
+            printRepeated('-', w4 + 2); print("+", .{});
+            printRepeated('-', w5 + 2); print("+", .{});
+            printRepeated('-', w6 + 2); print("+\n", .{});
         }
+    }.draw;
 
-        print("\x1B[2J\x1B[H", .{});
-        printTaskTable(tasks, current_page, total_items, page_size);
+    // 2. Linha superior
+    printSeparator(w_id, w_title, w_desc, w_owner, w_req, w_status);
 
-        print("[P] Próxima | [A] Anterior | [Q] Sair: ", .{});
-        if (try reader.takeDelimiterInclusive('\n')) |input| {
-            const cmd = std.mem.trim(u8, input, "\r\n ");
-            if (std.mem.eql(u8, cmd, "p") or std.mem.eql(u8, cmd, "P")) {
-                if (offset + page_size < total_items) current_page += 1;
-            } else if (std.mem.eql(u8, cmd, "a") or std.mem.eql(u8, cmd, "A")) {
-                if (current_page > 1) current_page -= 1;
-            } else if (std.mem.eql(u8, cmd, "q") or std.mem.eql(u8, cmd, "Q")) {
-                break;
-            }
-        }
-    }
+    // 3. Cabeçalho (Usa fmtSliceLeft para alinhar dinamicamente à esquerda)
 }

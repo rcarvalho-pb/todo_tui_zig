@@ -1,1 +1,1 @@
-INSERT INTO tasks (task_name, owner, requester) VALUES (?, ?, ?);
+INSERT INTO tasks (title, description, owner, requester, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?);

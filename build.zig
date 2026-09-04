@@ -69,6 +69,7 @@ pub fn build(b: *std.Build) void {
 
     options.addOption([]const u8, "db_path", "db/db.db");
     options.addOption([]const u8, "sql_files", "sql");
+    options.addOption([]const u8, "default_owner", "Ramon");
 
     exe.root_module.addOptions("build_options", options);
 

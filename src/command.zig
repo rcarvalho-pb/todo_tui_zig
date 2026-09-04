@@ -3,11 +3,15 @@ const Allocator = std.mem.Allocator;
 
 const print = std.debug.print;
 
-const Command = struct {
-    arena: Allocator,
+pub const Command = enum {
+    stat, new, start, finish, cancel, rename, description, owner, requester, list, show, help
 };
 
-pub const helper =
+pub fn helper() void {
+    print("{s}", .{helper_msg});
+}
+
+const helper_msg =
     \\--------------------------------------------------------------
     \\                           TODO CLI
     \\               Simple task manager written in Zig
@@ -18,6 +22,9 @@ pub const helper =
     \\    todo <command> [options]
     \\
     \\COMMANDS
+    \\
+    \\    statistics
+    \\        stat
     \\
     \\    new         Create a new task
     \\
@@ -43,15 +50,22 @@ pub const helper =
     \\
     \\        todo requester 4 Product
     \\
-    \\    list        List all tasks
+    \\    list
+    \\        -t: created and no started
+    \\        -a: all
+    \\        -c: created
+    \\        -s: started
+    \\        -f: finished
+    \\        -d: canceled
+    \\        -x: not finished or canceled
     \\
-    \\        todo list
+    \\        todo list [opt]
     \\
     \\    show        Show task information
     \\
     \\        todo show 4
     \\
-    \\    delete      Delete a task
+    \\    cancel      Cancel a task
     \\
     \\        todo delete 4
     \\
@@ -72,10 +86,4 @@ pub const helper =
     \\    -q, --quiet
     \\        Suppress informational output.
     \\
-    \\EXIT STATUS
-    \\
-    \\    0   Success
-    \\    1   Invalid command
-    \\    2   Invalid arguments
-    \\    3   Database error
 ;
